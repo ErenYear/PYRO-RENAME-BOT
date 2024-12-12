@@ -26,24 +26,28 @@ id_pattern = re.compile(r'^.\d+$')
 
 class Config(object):
     # pyro client config
-    API_ID    = os.environ.get("API_ID", "")
-    API_HASH  = os.environ.get("API_HASH", "")
-    BOT_TOKEN = os.environ.get("BOT_TOKEN", "") 
+    API_ID    = 20028561
+    API_HASH  = "0f3793daaf4d3905e55b0e44d8719cad"
+    BOT_TOKEN = "7619471587:AAHAdB34Olz_VGh82UsO7yzjROMW2FnZJWo" 
    
     # database config
-    DB_NAME = os.environ.get("DB_NAME","pyro-botz")     
-    DB_URL  = os.environ.get("DB_URL","")
+    DB_NAME = "FileRenamer"     
+    DB_URL  = "mongodb://localhost:27017/"
  
     # other configs
     BOT_UPTIME  = time.time()
-    START_PIC   = os.environ.get("START_PIC", "")
-    ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('ADMIN', '').split()]
-    FORCE_SUB   = os.environ.get("FORCE_SUB", "") 
-    LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL"))
-    MAX_CONCURRENT_TRANSMISSIONS = int(os.environ.get("MAX_CONCURRENT_TRANSMISSIONS", "2")) # Set the maximum amount of concurrent transmissions (uploads & downloads).
+    START_PIC   = "https://files.catbox.moe/eob0y8.jpg"
+    # List of admin IDs as a string
+    admin_ids = "2033411815 7875121895 5630057244 5332414680"
+    
+    # Create the ADMIN list
+    ADMIN = [int(admin) if id_pattern.search(admin) else admin for admin in admin_ids.split()]  
+    FORCE_SUB   = ""
+    LOG_CHANNEL = "-1002102898878"
+    MAX_CONCURRENT_TRANSMISSIONS = 3
     
     # wes response configuration     
-    WEB_SUPPORT = bool(os.environ.get("WEB_SUPPORT", "True"))
+    WEB_SUPPORT = True
 
 
 
