@@ -32,7 +32,7 @@ class Config(object):
    
     # database config
     DB_NAME = "FileRenamer"     
-    DB_URL  = "mongodb://localhost:27017/"
+    DB_URL  = "mongodb+srv://Sungjinwoo4:sung4224@cluster0.ayaos.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
  
     # other configs
     BOT_UPTIME  = time.time()
