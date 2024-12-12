@@ -61,11 +61,11 @@ async def rename_selection(client, message):
         new_name = new_name + "." + extn
     await reply_message.delete()
 
-    button = [[InlineKeyboardButton("📁 Dᴏᴄᴜᴍᴇɴᴛ",callback_data = "upload_document")]]
+    button = [[InlineKeyboardButton("📁 Dᴏᴄᴜᴍᴇɴᴛ", callback_data=f"upload:document")]]
     if file.media in [MessageMediaType.VIDEO, MessageMediaType.DOCUMENT]:
-        button.append([InlineKeyboardButton("🎥 Vɪᴅᴇᴏ", callback_data = "upload_video")])
+        button.append([InlineKeyboardButton("🎥 Vɪᴅᴇᴏ", callback_data=f"upload:video")])
     elif file.media == MessageMediaType.AUDIO:
-        button.append([InlineKeyboardButton("🎵 Aᴜᴅɪᴏ", callback_data = "upload_audio")])
+        button.append([InlineKeyboardButton("🎵 Aᴜᴅɪᴏ", callback_data=f"upload:audio")])
     await message.reply(
         text=f"**Sᴇʟᴇᴄᴛ Tʜᴇ Oᴜᴛᴩᴜᴛ Fɪʟᴇ Tyᴩᴇ**\n**• Fɪʟᴇ Nᴀᴍᴇ :-**```{str(new_name)}```",
         reply_to_message_id=file.id,
@@ -73,7 +73,7 @@ async def rename_selection(client, message):
     )
 
 
-@Client.on_callback_query(filters.regex("^upload_"))
+@Client.on_callback_query(filters.regex("upload"))
 async def rename_callback(bot, query): 
     user_id = query.from_user.id
     file_name = query.message.text.split(":-")[1].strip()
@@ -85,14 +85,14 @@ async def rename_callback(bot, query):
         path = await file.download(file_name=file_path, progress=progress_for_pyrogram, progress_args=("Dᴏᴡɴʟᴏᴀᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time()))                    
     except Exception as e:
         return await sts.edit(f"Error: {e}")
-
+    
     duration = 0
     try:
         metadata = extractMetadata(createParser(file_path))
         if metadata and metadata.has("duration"):
             duration = metadata.get('duration').seconds
-    except Exception as e:
-        print(f"Metadata extraction failed: {e}")
+    except:
+        pass
     
     ph_path = None
     media = getattr(file, file.media.value)
@@ -107,50 +107,51 @@ async def rename_callback(bot, query):
     else:
         caption = f"**{file_name}**"
  
-    if media.thumbs or db_thumb:
-        try:
-            if db_thumb:
-                ph_path = await bot.download_media(db_thumb) 
-            else:
-                ph_path = await bot.download_media(media.thumbs[0].file_id)
-            Image.open(ph_path).convert("RGB").save(ph_path)
-            img = Image.open(ph_path)
-            img.resize((320, 320))
-            img.save(ph_path, "JPEG")
-        except Exception as e:
-            print(f"Thumbnail processing failed: {e}")
+    if (media.thumbs or db_thumb):
+        if db_thumb:
+            ph_path = await bot.download_media(db_thumb) 
+        else:
+            ph_path = await bot.download_media(media.thumbs[0].file_id)
+        Image.open(ph_path).convert("RGB").save(ph_path)
+        img = Image.open(ph_path)
+        img.resize((320, 320))
+        img.save(ph_path, "JPEG")
 
     await sts.edit("Tʀyɪɴɢ Tᴏ Uᴩʟᴏᴀᴅɪɴɢ....")
-
-    type = query.data.replace("upload_", "")
+    file_type = query.data.split(":")[1]
     try:
-        if type == "document":
+        if file_type == "document":
             await query.message.reply_document(
                 document=file_path,
                 caption=caption,
-                thumb=ph_path
+                thumb=ph_path if ph_path else None
             )
-        elif type == "video": 
+        elif file_type == "video": 
             await query.message.reply_video(
                 video=file_path,
                 caption=caption,
-                thumb=ph_path,
+                thumb=ph_path if ph_path else None,
                 duration=duration
             )
-        elif type == "audio": 
+        elif file_type == "audio": 
             await query.message.reply_audio(
                 audio=file_path,
-                caption=caption
+                caption=caption,
+                thumb=ph_path if ph_path else None,
+                duration=duration
             )
     except Exception as e:          
-        await sts.edit(f"Error: {e}")
-    finally:
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            if ph_path and os.path.exists(ph_path):
-                os.remove(ph_path)
-            await sts.delete()
-        except Exception as e:
-            print(f"Cleanup failed: {e}")
-            
+        try: 
+            os.remove(file_path)
+            if ph_path: os.remove(ph_path)
+            return await sts.edit(f"Error: {e}")
+        except:
+            pass
+        
+    try: 
+        os.remove(file_path)
+        if ph_path: os.remove(ph_path)
+        await sts.delete()
+    except:
+        pass
+        
