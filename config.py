@@ -38,7 +38,7 @@ class Config(object):
     BOT_UPTIME  = time.time()
     START_PIC   = "https://files.catbox.moe/eob0y8.jpg"
     # List of admin IDs as a string
-    admin_ids = "2033411815 7875121895 5630057244 5332414680"
+    admin_ids = "2033411815"
     
     # Create the ADMIN list
     ADMIN = [int(admin) if id_pattern.search(admin) else admin for admin in admin_ids.split()]  
