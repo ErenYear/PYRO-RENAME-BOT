@@ -121,25 +121,14 @@ async def rename_callback(bot, query):
         if type == "document":
             await sts.reply_document(
                 document=file_path,
-                caption=caption, 
-                progress=progress_for_pyrogram,
-                progress_args=("Uᴩʟᴏᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time())
             )
         elif type == "video": 
             await sts.reply_video(
                 video=file_path,
-                caption=caption,
-                duration=duration,
-                progress=progress_for_pyrogram,
-                progress_args=("Uᴩʟᴏᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time())
             )
         elif type == "audio": 
             await sts.reply_audio(
                 audio=file_path,
-                caption=caption,
-                duration=duration,
-                progress=progress_for_pyrogram,
-                progress_args=("Uᴩʟᴏᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time())
             )
     except Exception as e:          
         try: 
