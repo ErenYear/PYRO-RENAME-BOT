@@ -14,105 +14,79 @@ from PIL import Image
 import os, time
 
 
-uploaded_files = {}
+batch_files = {}
 
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
-async def file_handler(client, message):
-    user_id = message.from_user.id
-    if user_id not in uploaded_files:
-        uploaded_files[user_id] = []
-
+async def rename_handler(client, message):
     file = getattr(message, message.media.value)
-    uploaded_files[user_id].append(file)
+    filename = file.file_name  
+    if file.file_size > 2000 * 1024 * 1024:
+        return await message.reply_text("Sᴏʀʀy Bʀᴏ Tʜɪꜱ Bᴏᴛ Iꜱ Dᴏᴇꜱɴ'ᴛ Sᴜᴩᴩᴏʀᴛ Uᴩʟᴏᴀᴅɪɴɢ Fɪʟᴇꜱ Bɪɢɢᴇʀ Tʜᴀɴ 2Gʙ")
 
-    if len(uploaded_files[user_id]) == 1:
-        filename = file.file_name
-        await message.reply_text(
-            text=f"**__Pʟᴇᴀꜱᴇ Eɴᴛᴇʀ Nᴇᴡ Fɪʟᴇɴᴀᴍᴇ...__**\n\n**Oʟᴅ Fɪʟᴇ Nᴀᴍᴇ** :- `{filename}`",
-            reply_to_message_id=message.id,
-            reply_markup=ForceReply(True)
-        )
-    else:
-        # Multiple files - prompt for batch renaming
-        await message.reply_text(
-            text=f"**{len(uploaded_files[user_id])} files uploaded.**\nSend **DONE** to start batch renaming or upload more files.",
-            reply_markup=ForceReply(True)
-        )
-
-@Client.on_message(filters.private & filters.reply & filters.text)
-async def batch_or_single_rename(client, message):
     user_id = message.from_user.id
+    if user_id not in batch_files:
+        batch_files[user_id] = []
+    
+    batch_files[user_id].append(message)
 
-    if message.text.lower() == "done" and len(uploaded_files[user_id]) > 1:
-        # Batch rename initiation
+    if len(batch_files[user_id]) == 1:
         await message.reply_text(
-            "Please enter the base name in the following format:\n"
-            "`BaseName [Tags] [Season] {E01} [Resolution] @Source.extension`\n\n"
-            "Include `{E01}` for episode numbering.",
-            reply_markup=ForceReply(True)
+            "Do you want to rename multiple files?\n"
+            "• Send all files first\n"
+            "• Reply with a template name (e.g., Naruto [Dual] [S1] {E01} [480p] @Anime_Sanctum.mkv)\n"
+            "• Use {E} where episode number should be\n"
+            "• Send 'done' when you've uploaded all files"
         )
-    elif len(uploaded_files[user_id]) == 1:
-        # Single rename process
-        reply_message = message.reply_to_message
-        new_name = message.text
-        file = uploaded_files[user_id][0]
-        await process_single_rename(client, message, file, new_name)
-        uploaded_files[user_id].clear()  # Clear user's uploaded files list after renaming
-    else:
-        await message.reply_text("Invalid input. Send **DONE** for batch renaming or provide a new filename.")
 
-@Client.on_message(filters.private & filters.reply & filters.create(lambda _, __, m: "{E01}" in m.text))
-async def process_batch_rename(client, message):
+@Client.on_message(filters.private & filters.text)
+async def batch_rename_handler(client, message):
     user_id = message.from_user.id
-    base_name = message.text
-    files = uploaded_files[user_id]
+    
+    if user_id not in batch_files or not batch_files[user_id]:
+        return
+    
+    if message.text.lower() == 'done':
+        await process_batch_rename(client, user_id)
+        return
 
-    episode_start = int(base_name.split("{E")[1].split("}")[0])
-    extension = base_name.split(".")[-1] if "." in base_name else "mkv"
-    renamed_files = []
+    if '{e}' not in message.text.lower():
+        return
 
-    for i, file in enumerate(files):
-        episode_num = f"E{str(episode_start + i).zfill(2)}"
-        new_name = base_name.replace("{E01}", episode_num).replace(".extension", f".{extension}")
-        renamed_files.append(new_name)
+    batch_files[user_id]['template'] = message.text
 
-    # Confirm batch renaming
-    await message.reply_text(
-        text=f"Renaming {len(files)} files as follows:\n\n" +
-             "\n".join([f"{file.file_name} ➡ {renamed}" for file, renamed in zip(files, renamed_files)]),
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Confirm", callback_data="confirm_batch_rename")]])
-    )
-
-@Client.on_callback_query(filters.regex("confirm_batch_rename"))
-async def execute_batch_rename(client, query):
-    user_id = query.from_user.id
-    files = uploaded_files[user_id]
-    for i, file in enumerate(files):
-        # Implement renaming and upload logic here
-        await query.message.reply(f"Renamed and uploaded: `{file.file_name}` ➡ `{new_name}`")
-
-    uploaded_files[user_id].clear()  # Clear user's file list after processing
-    await query.message.edit("Batch renaming and uploading completed.")
-
-async def process_single_rename(client, message, file, new_name):
-    """Process single file renaming."""
-    if not "." in new_name:
-        if "." in file.file_name:
-            extn = file.file_name.rsplit('.', 1)[-1]
-        else:
-            extn = "mkv"
-        new_name = new_name + "." + extn
-
-    button = [[InlineKeyboardButton("📁 Dᴏᴄᴜᴍᴇɴᴛ", callback_data="upload_document")]]
-    if file.media in [MessageMediaType.VIDEO, MessageMediaType.DOCUMENT]:
-        button.append([InlineKeyboardButton("🎥 Vɪᴅᴇᴏ", callback_data="upload_video")])
-    elif file.media == MessageMediaType.AUDIO:
-        button.append([InlineKeyboardButton("🎵 Aᴜᴅɪᴏ", callback_data="upload_audio")])
-
-    await message.reply(
-        text=f"**Sᴇʟᴇᴄᴛ Tʜᴇ Oᴜᴛᴩᴜᴛ Fɪʟᴇ Tyᴩᴇ**\n**• Fɪʟᴇ Nᴀᴍᴇ :-** `{new_name}`",
-        reply_markup=InlineKeyboardMarkup(button)
-    )
+async def process_batch_rename(client, user_id):
+    files = batch_files[user_id]
+    template = files['template']
+    
+    del files['template']
+    
+    files.sort(key=lambda x: x.id)
+    
+    base_template = template.replace('{E}', '{:02d}')
+    base_template = base_template.replace('{E01}', '{:02d}')
+    
+    for index, file_message in enumerate(files):
+        episode_number = index + 1
+        
+        new_name = base_template.format(episode_number)
+        
+        msg = await client.get_messages(file_message.chat.id, file_message.id)
+        
+        try:
+            await rename_selection(client, type('RenameMessage', (), {
+                'text': new_name,
+                'reply_to_message': msg,
+                'delete': lambda: None,
+                'chat': msg.chat,
+                'from_user': msg.from_user,
+                'id': msg.id
+            }))
+        except Exception as e:
+            await client.send_message(user_id, f"Error renaming file: {e}")
+    
+    batch_files[user_id] = []
+    await client.send_message(user_id, "Batch rename completed!")
+    
     
 async def force_reply_filter(_, client, message):
     if (message.reply_to_message.reply_markup) and isinstance(message.reply_to_message.reply_markup, ForceReply):
