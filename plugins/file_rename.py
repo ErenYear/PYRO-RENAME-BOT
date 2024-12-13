@@ -14,124 +14,29 @@ from PIL import Image
 import os, time
 
 
-batch_states = {}
-
-@Client.on_message(filters.command("batch"))
-async def start_batch_rename(client, message):
-    """Initialize batch renaming process"""
-    user_id = message.from_user.id
-    
-    # Reset any existing batch state for this user
-    batch_states[user_id] = {
-        'files': [],
-        'status': 'waiting_for_files'
-    }
-    
-    await message.reply_text(
-        "🔄 Batch Rename Mode Activated!\n\n"
-        "• Send all the files you want to rename\n"
-        "• After sending files, I'll ask for a naming template\n"
-        "• Use {E} or {E01} in the template to add episode numbers\n"
-        "• Send /cancel to stop batch renaming"
-    )
-
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
-async def handle_batch_or_single_file(client, message):
-    user_id = message.from_user.id
-    
-    # Check file size limit
+async def rename_handler(client, message):
     file = getattr(message, message.media.value)
+    filename = file.file_name  
     if file.file_size > 2000 * 1024 * 1024:
         return await message.reply_text("Sᴏʀʀy Bʀᴏ Tʜɪꜱ Bᴏᴛ Iꜱ Dᴏᴇꜱɴ'ᴛ Sᴜᴩᴩᴏʀᴛ Uᴩʟᴏᴀᴅɪɴɢ Fɪʟᴇꜱ Bɪɢɢᴇʀ Tʜᴀɴ 2Gʙ")
-    
-    # Check if user is in batch mode
-    if user_id in batch_states and batch_states[user_id]['status'] == 'waiting_for_files':
-        # Add file to batch
-        batch_states[user_id]['files'].append(message)
-        await message.reply_text(f"File added to batch. Total files: {len(batch_states[user_id]['files'])}")
-        return
-    
-    # If not in batch mode, use existing single file rename logic
+
     try:
         await message.reply_text(
-            text=f"**__Pʟᴇᴀꜱᴇ Eɴᴛᴇʀ Nᴇᴡ Fɪʟᴇɴᴀᴍᴇ...__**\n\n**Oʟᴅ Fɪʟᴇ Nᴀᴍᴇ** :- `{file.file_name}`",
-            reply_to_message_id=message.id,  
-            reply_markup=ForceReply(True)
+            text=f"**__Pʟᴇᴀꜱᴇ Eɴᴛᴇʀ Nᴇᴡ Fɪʟᴇɴᴀᴍᴇ...__**\n\n**Oʟᴅ Fɪʟᴇ Nᴀᴍᴇ** :- `{filename}`",
+    	    reply_to_message_id=message.id,  
+    	    reply_markup=ForceReply(True)
         )       
     except FloodWait as e:
         await sleep(e.value)
         await message.reply_text(
-            text=f"**__Pʟᴇᴀꜱᴇ Eɴᴛᴇʀ Nᴇᴡ Fɪʟᴇɴᴀᴍᴇ...__**\n\n**Oʟᴅ Fɪʟᴇ Nᴀᴍᴇ** :- `{file.file_name}`",
-            reply_to_message_id=message.id,  
-            reply_markup=ForceReply(True)
+            text=f"**__Pʟᴇᴀꜱᴇ Eɴᴛᴇʀ Nᴇᴡ Fɪʟᴇɴᴀᴍᴇ...__**\n\n**Oʟᴅ Fɪʟᴇ Nᴀᴍᴇ** :- `{filename}`",
+    	    reply_to_message_id=message.id,  
+    	    reply_markup=ForceReply(True)
         )
+    except:
+        pass
 
-@Client.on_message(filters.private & filters.text)
-async def handle_batch_template(client, message):
-    user_id = message.from_user.id
-    
-    # Check if user is in batch mode
-    if user_id not in batch_states or batch_states[user_id]['status'] != 'waiting_for_files':
-        return
-    
-    # Check for cancel command
-    if message.text.lower() == '/cancel':
-        del batch_states[user_id]
-        await message.reply_text("Batch rename process cancelled.")
-        return
-    
-    # Check if the message contains episode template
-    if '{e}' not in message.text.lower():
-        await message.reply_text("Please include {E} or {E01} in your template for episode numbering.")
-        return
-    
-    # Prepare for batch renaming
-    files = batch_states[user_id]['files']
-    
-    # Prepare the template (replace {E} with a formatter)
-    template = message.text
-    base_template = template.replace('{E}', '{:02d}').replace('{E01}', '{:02d}')
-    
-    # Process each file
-    for index, file_message in enumerate(files):
-        # Calculate episode number
-        episode_number = index + 1
-        
-        # Generate new filename
-        new_name = base_template.format(episode_number)
-        
-        # Get the actual file to rename
-        msg = await client.get_messages(file_message.chat.id, file_message.id)
-        file = msg.reply_to_message or msg
-        media = getattr(file, file.media.value)
-        
-        # Determine file extension
-        if not "." in new_name:
-            if "." in media.file_name:
-                extn = media.file_name.rsplit('.', 1)[-1]
-            else:
-                extn = "mkv"
-            new_name = new_name + "." + extn
-        
-        # Create a mock message for existing rename logic
-        mock_message = type('MockMessage', (), {
-            'text': new_name,
-            'delete': lambda: None,
-            'reply_to_message': msg,
-            'chat': msg.chat,
-            'from_user': msg.from_user,
-            'id': msg.id
-        })()
-        
-        # Trigger existing rename selection
-        try:
-            await rename_selection(client, mock_message)
-        except Exception as e:
-            await message.reply_text(f"Error renaming file: {e}")
-    
-    # Clear batch state
-    del batch_states[user_id]
-    await message.reply_text("Batch renaming completed successfully!")
 
 async def force_reply_filter(_, client, message):
     if (message.reply_to_message.reply_markup) and isinstance(message.reply_to_message.reply_markup, ForceReply):
@@ -251,7 +156,6 @@ async def rename_callback(bot, query):
         os.remove(ph_path)
         await sts.delete()
     except: pass
-
 
 
 
