@@ -158,111 +158,65 @@ async def rename_callback(bot, query):
     except: pass
 
 
-@Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
-async def batch_rename_handler(client, message):
-    if not hasattr(client, "file_batch"):
-        client.file_batch = []
-    
-    file = getattr(message, message.media.value)
-    client.file_batch.append((file, message))
-    
+@Client.on_message(filters.private & filters.command("batch"))
+async def batch_rename_start(client, message):
     await message.reply_text(
-        f"File `{file.file_name}` added to batch. Send more files or type **`/done`** to proceed with renaming."
-    )
-
-@Client.on_message(filters.private & filters.command("done"))
-async def rename_batch_start(client, message):
-    if not hasattr(client, "file_batch") or not client.file_batch:
-        return await message.reply_text("No files in the batch. Add files first.")
-    
-    await message.reply_text(
-        text="**Please enter the base filename format:**\n\nExample: `Naruto [Dual] [S1] {E01} [480p] @Anime_Sanctum.mkv`",
+        "You can now upload multiple files for batch renaming. Send **DONE** when finished.",
         reply_markup=ForceReply(True)
     )
+    await batch_rename_handler(client, message)
 
-@Client.on_message(filters.private & filters.reply & filters.create(force_reply_filter))
-async def rename_batch_execute(client, message):
-    if not hasattr(client, "file_batch") or not client.file_batch:
-        return await message.reply_text("No files in the batch to rename.")
 
-    base_name = message.text
-    try:
-        start_episode = int(base_name.split("{E")[1].split("}")[0])
-    except (IndexError, ValueError):
-        return await message.reply_text("Invalid format. Use a format like `Naruto [Dual] [S1] {E01} [480p] @Anime_Sanctum.mkv`.")
-    
-    for index, (file, msg) in enumerate(client.file_batch):
-        episode_number = start_episode + index
-        new_name = base_name.replace(f"{start_episode:02}", f"{episode_number:02}")
-        
-        button = [[InlineKeyboardButton("📁 Document", callback_data="upload_document")]]
-        if file.media in [MessageMediaType.VIDEO, MessageMediaType.DOCUMENT]:
-            button.append([InlineKeyboardButton("🎥 Video", callback_data="upload_video")])
-        elif file.media == MessageMediaType.AUDIO:
-            button.append([InlineKeyboardButton("🎵 Audio", callback_data="upload_audio")])
+async def batch_rename_handler(client, message):
+    files = []
+    await message.reply_text("Send your files now. Type **DONE** to proceed.")
 
-        await msg.reply(
-            text=f"**Select the output file type:**\n**• File Name:** `{new_name}`",
-            reply_markup=InlineKeyboardMarkup(button)
+    @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
+    async def collect_batch_files(client, batch_message):
+        file = getattr(batch_message, batch_message.media.value)
+        files.append(file)
+        await batch_message.reply_text(f"File added: `{file.file_name}`. Send **DONE** to finish.")
+
+    @Client.on_message(filters.private & filters.text & filters.reply)
+    async def finalize_batch(client, batch_done_message):
+        if batch_done_message.text.lower() == "done":
+            if not files:
+                await batch_done_message.reply("No files were uploaded. Batch process canceled.")
+                return
+            await batch_done_message.reply_text(
+                "Batch upload complete. Enter the base name in this format:\n"
+                "`BaseName [Tags] [Season] {E01} [Resolution] @Source.extension`\n\n"
+                "Ensure to include `{E01}` for episode numbering.",
+                reply_markup=ForceReply(True)
+            )
+
+    @Client.on_message(filters.private & filters.text & filters.reply)
+    async def rename_and_upload_batch(client, rename_message):
+        base_name = rename_message.text
+        if "{E01}" not in base_name:
+            await rename_message.reply("Invalid format. Make sure to include `{E01}` for episode numbering.")
+            return
+
+        episode_start = int(base_name.split("{E")[1].split("}")[0])
+        extension = base_name.split(".")[-1] if "." in base_name else "mkv"
+        renamed_files = []
+
+        for i, file in enumerate(files):
+            episode_num = f"E{str(episode_start + i).zfill(2)}"
+            new_name = base_name.replace("{E01}", episode_num).replace(".extension", f".{extension}")
+            renamed_files.append((file, new_name))
+
+        await rename_message.reply_text(
+            text="Batch renaming map:\n\n" +
+                 "\n".join([f"{file.file_name} ➡ {new_name}" for file, new_name in renamed_files]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Confirm", callback_data="confirm_batch_rename")]])
         )
 
-    client.file_batch = []
-    await message.reply_text("Batch processing completed.")
-
-@Client.on_callback_query(filters.regex("upload"))
-async def batch_upload_callback(bot, query):
-    user_id = query.from_user.id
-    file_name = query.message.text.split(":-")[1].strip()
-    file_path = f"downloads/{user_id}/{file_name}"
-    file = query.message.reply_to_message
-
-    sts = await query.message.edit("Trying to download...")
-    try:
-        path = await file.download(file_name=file_path, progress=progress_for_pyrogram, progress_args=("Download started...", sts, time.time()))
-    except Exception as e:
-        return await sts.edit(f"Error: {e}")
-    
-    duration = 0
-    try:
-        metadata = extractMetadata(createParser(file_path))
-        if metadata.has("duration"):
-            duration = metadata.get('duration').seconds
-    except:
-        pass
-
-    ph_path = None
-    try:
-        caption = f"**{file_name}**"
-        await sts.edit("Trying to upload...")
-        if query.data.endswith("document"):
-            await query.message.reply_document(
-                document=file_path,
-                caption=caption,
-                progress=progress_for_pyrogram,
-                progress_args=("Upload started...", sts, time.time())
-            )
-        elif query.data.endswith("video"):
-            await query.message.reply_video(
-                video=file_path,
-                caption=caption,
-                duration=duration,
-                progress=progress_for_pyrogram,
-                progress_args=("Upload started...", sts, time.time())
-            )
-        elif query.data.endswith("audio"):
-            await query.message.reply_audio(
-                audio=file_path,
-                caption=caption,
-                duration=duration,
-                progress=progress_for_pyrogram,
-                progress_args=("Upload started...", sts, time.time())
-            )
-    except Exception as e:
-        await sts.edit(f"Error: {e}")
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        if ph_path and os.path.exists(ph_path):
-            os.remove(ph_path)
+    @Client.on_callback_query(filters.regex("confirm_batch_rename"))
+    async def execute_batch_rename(client, query):
+        user_id = query.from_user.id
+        for file, new_name in renamed_files:
+            file_path = f"downloads/{user_id}{time.time()}/{new_name}"
+            await file.download(file_name=file_path)
+            await query.message.edit("Batch rename and upload completed.")
         
-
