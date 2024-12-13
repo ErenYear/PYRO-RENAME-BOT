@@ -38,11 +38,6 @@ async def process_batch_rename(client, message):
     """Process batch rename when user sends /done"""
     user_id = message.from_user.id
     
-    # Check if user has an active batch process
-    if user_id not in user_batch_states or user_batch_states[user_id]['state'] == 'waiting_for_files':
-        await message.reply_text("No batch rename process active. Start with /batch")
-        return
-    
     # Check if files exist
     batch_files = user_batch_states[user_id]['files']
     if not batch_files:
