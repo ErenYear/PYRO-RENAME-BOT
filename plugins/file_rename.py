@@ -82,10 +82,9 @@ async def rename_callback(bot, query):
 
     sts = await query.message.edit("Tʀyɪɴɢ Tᴏ Dᴏᴡɴʟᴏᴀᴅɪɴɢ....")    
     try:
-        path = await file.download(file_name=file_path, progress=progress_for_pyrogram, progress_args=("Dᴏᴡɴʟᴏᴀᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time()))                    
+     	path = await file.download(file_name=file_path, progress=progress_for_pyrogram,progress_args=("Dᴏᴡɴʟᴏᴀᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time()))                    
     except Exception as e:
-        return await sts.edit(e)
-    
+     	return await sts.edit(e)
     duration = 0
     try:
         metadata = extractMetadata(createParser(file_path))
@@ -95,10 +94,16 @@ async def rename_callback(bot, query):
     
     ph_path = None
     media = getattr(file, file.media.value)
+    db_caption = await db.get_caption(user_id)
     db_thumb = await db.get_thumbnail(user_id)
-    new_name = file_name.strip()
 
-    caption = f"**{new_name}**"
+    if db_caption:
+        try:
+            caption = db_caption.format(filename=file_name, filesize=humanbytes(media.file_size), duration=convert(duration))
+        except KeyError:
+            caption = f"**{file_name}**"
+    else:
+        caption = f"**{file_name}**"
  
     if (media.thumbs or db_thumb):
         if db_thumb:
@@ -143,15 +148,15 @@ async def rename_callback(bot, query):
         try: 
             os.remove(file_path)
             os.remove(ph_path)
-            return await sts.edit(f"Eʀʀᴏʀ {e}")
-        except:
-            pass
+            return await sts.edit(f" Eʀʀᴏʀ {e}")
+        except: pass
         
     try: 
         os.remove(file_path)
         os.remove(ph_path)
         await sts.delete()
-    except:
-        pass
-        
+    except: pass
+
+
+
 
