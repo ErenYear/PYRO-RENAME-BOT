@@ -100,14 +100,27 @@ async def handle_batch_template(client, message):
         # Generate new filename
         new_name = base_template.format(episode_number)
         
+        # Get the actual file to rename
+        msg = await client.get_messages(file_message.chat.id, file_message.id)
+        file = msg.reply_to_message or msg
+        media = getattr(file, file.media.value)
+        
+        # Determine file extension
+        if not "." in new_name:
+            if "." in media.file_name:
+                extn = media.file_name.rsplit('.', 1)[-1]
+            else:
+                extn = "mkv"
+            new_name = new_name + "." + extn
+        
         # Create a mock message for existing rename logic
         mock_message = type('MockMessage', (), {
             'text': new_name,
             'delete': lambda: None,
-            'reply_to_message': file_message,
-            'chat': file_message.chat,
-            'from_user': file_message.from_user,
-            'id': file_message.id
+            'reply_to_message': msg,
+            'chat': msg.chat,
+            'from_user': msg.from_user,
+            'id': msg.id
         })()
         
         # Trigger existing rename selection
@@ -119,7 +132,6 @@ async def handle_batch_template(client, message):
     # Clear batch state
     del batch_states[user_id]
     await message.reply_text("Batch renaming completed successfully!")
-    
 
 async def force_reply_filter(_, client, message):
     if (message.reply_to_message.reply_markup) and isinstance(message.reply_to_message.reply_markup, ForceReply):
