@@ -14,7 +14,7 @@ from PIL import Image
 import os, time
 
 
-@Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
+# @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
 async def rename_handler(client, message):
     file = getattr(message, message.media.value)
     filename = file.file_name  
