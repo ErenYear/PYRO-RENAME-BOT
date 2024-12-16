@@ -15,6 +15,9 @@ import os, time
 
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
 async def rename_handler(client, message):
+    chat_id = message.chat.id
+    if batch_states.get(chat_id, False):
+        return
     file = getattr(message, message.media.value)
     filename = file.file_name  
     if file.file_size > 2000 * 1024 * 1024:
