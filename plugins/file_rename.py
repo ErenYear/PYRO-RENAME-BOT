@@ -13,8 +13,8 @@ from asyncio import sleep
 from PIL import Image
 import os, time
 
-
-# @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
+'''
+@Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
 async def rename_handler(client, message):
     file = getattr(message, message.media.value)
     filename = file.file_name  
@@ -44,7 +44,7 @@ async def force_reply_filter(_, client, message):
     else:
         return False 
  
-# @Client.on_message(filters.private & filters.reply & filters.create(force_reply_filter))
+@Client.on_message(filters.private & filters.reply & filters.create(force_reply_filter))
 async def rename_selection(client, message):
     reply_message = message.reply_to_message
 
@@ -156,7 +156,7 @@ async def rename_callback(bot, query):
         os.remove(ph_path)
         await sts.delete()
     except: pass
-
+'''
 
 from pyrogram import Client, filters
 from pyrogram.enums import MessageMediaType
