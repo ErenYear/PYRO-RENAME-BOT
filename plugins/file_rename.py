@@ -158,4 +158,176 @@ async def rename_callback(bot, query):
     except: pass
 
 
+from pyrogram import Client, filters
+from pyrogram.enums import MessageMediaType
+from pyrogram.errors import FloodWait
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
+
+from hachoir.metadata import extractMetadata
+from hachoir.parser import createParser
+
+from helper.utils import progress_for_pyrogram, convert, humanbytes
+from helper.database import db
+
+from asyncio import sleep
+from PIL import Image
+import os, time
+
+# Shared storage for batch processing
+batch_states = {}
+batch_files = {}
+
+# Custom filter to check batch upload state
+def batch_filter():
+    async def func(_, __, message):
+        return batch_states.get(message.chat.id, False)
+    return filters.create(func)
+
+# Start Batch Mode
+@Client.on_message(filters.command("batch") & filters.private)
+async def start_batch(client, message):
+    chat_id = message.chat.id
+
+    if batch_states.get(chat_id, False):
+        await message.reply_text("⚠️ You are already in batch upload mode. Use /done to finish or /cancel to exit.")
+        return
+
+    batch_states[chat_id] = True
+    batch_files[chat_id] = []
+
+    await message.reply_text(
+        "**Batch Upload Mode Activated**\n\nSend files sequentially (e.g., Episode 1, Episode 2).\nUse /done to finish or /cancel to exit.",
+        reply_to_message_id=message.id
+    )
+
+# Collect Files in Batch
+@Client.on_message(filters.private & (filters.document | filters.audio | filters.video) & batch_filter())
+async def collect_batch_files(client, message):
+    chat_id = message.chat.id
+    file = getattr(message, message.media.value)
+
+    # Store file metadata
+    batch_files[chat_id].append({
+        "file_id": file.file_id,
+        "file_name": file.file_name,
+        "file_size": file.file_size,
+        "thumb_id": file.thumbs[0].file_id if file.thumbs else None
+    })
+
+    await message.reply_text(f"✅ File added to batch ({len(batch_files[chat_id])} files).")
+
+# Finish Batch and Rename Files
+@Client.on_message(filters.command("done") & filters.private)
+async def finish_batch(client, message):
+    chat_id = message.chat.id
+
+    if not batch_states.get(chat_id):
+        await message.reply_text("⚠️ You're not in batch upload mode. Use /batch to start.")
+        return
+
+    if not batch_files[chat_id]:
+        await message.reply_text("⚠️ No files were added. Use /batch to start again.")
+        return
+
+    # Ask for naming format
+    reply = await message.reply_text(
+        "✏️ Please provide the naming format (use `{numbering}` for sequence numbers):\n\nExample: `Episode {numbering}.mkv`",
+        reply_markup=ForceReply(True)
+    )
+
+    # Wait for user to reply with format
+    @Client.on_message(filters.private & filters.reply & filters.create(lambda _, __, msg: msg.reply_to_message == reply))
+    async def batch_rename_handler(_, rename_message):
+        name_format = rename_message.text
+
+        if "{numbering}" not in name_format:
+            await rename_message.reply_text("⚠️ Invalid format. Make sure to include `{numbering}`.")
+            return
+
+        # Ask for send options
+        buttons = [
+            [InlineKeyboardButton("📁 Send as Document", callback_data="batch_send_document")],
+            [InlineKeyboardButton("🎥 Send as Video", callback_data="batch_send_video")]
+        ]
+        await rename_message.reply_text(
+            "**How would you like to send the renamed files?**",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+        # Store batch info
+        batch_states[chat_id] = False
+        batch_files[chat_id] = {
+            "files": batch_files[chat_id],
+            "name_format": name_format
+        }
+
+# Handle Batch Send Options
+@Client.on_callback_query(filters.regex("batch_send_.*"))
+async def send_batch_files(client, query):
+    chat_id = query.message.chat.id
+    data = query.data
+    send_as_video = data == "batch_send_video"
+
+    batch_info = batch_files.get(chat_id, None)
+    if not batch_info:
+        await query.answer("No batch data found.", show_alert=True)
+        return
+
+    files = batch_info["files"]
+    name_format = batch_info["name_format"]
+    await query.message.edit("⏳ Processing batch files...")
+
+    for idx, file_data in enumerate(files, start=1):
+        try:
+            # Download the file
+            file_path = await client.download_media(file_data["file_id"])
+            new_name = name_format.replace("{numbering}", str(idx))
+            new_path = os.path.join(os.path.dirname(file_path), new_name)
+            os.rename(file_path, new_path)
+
+            # Download thumbnail if available
+            thumb_path = None
+            if file_data.get("thumb_id"):
+                thumb_path = await client.download_media(file_data["thumb_id"])
+
+            # Send file
+            if send_as_video:
+                await client.send_video(
+                    chat_id,
+                    video=new_path,
+                    thumb=thumb_path if thumb_path else None,
+                    caption=f"**{new_name}**"
+                )
+            else:
+                await client.send_document(
+                    chat_id,
+                    document=new_path,
+                    thumb=thumb_path if thumb_path else None,
+                    caption=f"**{new_name}**"
+                )
+
+            # Cleanup
+            os.remove(new_path)
+            if thumb_path:
+                os.remove(thumb_path)
+
+        except Exception as e:
+            await query.message.reply_text(f"⚠️ Error processing file {idx}: {e}")
+
+    # Clear batch state
+    batch_files.pop(chat_id, None)
+    await query.message.reply_text("✅ Batch processing completed.")
+
+# Cancel Batch Mode
+@Client.on_message(filters.command("cancel") & filters.private)
+async def cancel_batch(client, message):
+    chat_id = message.chat.id
+
+    if not batch_states.get(chat_id):
+        await message.reply_text("⚠️ You're not in batch upload mode.")
+        return
+
+    batch_states.pop(chat_id, None)
+    batch_files.pop(chat_id, None)
+    await message.reply_text("❌ Batch mode cancelled.")
 
