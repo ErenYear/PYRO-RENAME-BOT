@@ -28,7 +28,7 @@ class Config(object):
     # pyro client config
     API_ID    = 20028561
     API_HASH  = "0f3793daaf4d3905e55b0e44d8719cad"
-    BOT_TOKEN = "6289589949:AAFz53nui7kVW-MczA0_2bZNY50aW88UggU" 
+    BOT_TOKEN = "5919430251:AAG-bxcmEevYfKjFn-rPMuLaWe3nt0WNzMY" 
    
     # database config
     DB_NAME = "FileRenamer"     
