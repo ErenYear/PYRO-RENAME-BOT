@@ -174,160 +174,210 @@ from PIL import Image
 import os, time
 
 # Shared storage for batch processing
-batch_states = {}
 batch_files = {}
+batch_states = {}
 
-# Custom filter to check batch upload state
+# Custom filter to handle batch upload state
 def batch_filter():
     async def func(_, __, message):
         return batch_states.get(message.chat.id, False)
     return filters.create(func)
 
-# Start Batch Mode
 @Client.on_message(filters.command("batch") & filters.private)
 async def start_batch(client, message):
     chat_id = message.chat.id
 
     if batch_states.get(chat_id, False):
-        await message.reply_text("⚠️ You are already in batch upload mode. Use /done to finish or /cancel to exit.")
+        await message.reply_text("🚫 You're already in batch upload mode. Use /done to finish or /cancel to exit.")
         return
 
     batch_states[chat_id] = True
     batch_files[chat_id] = []
 
     await message.reply_text(
-        "**Batch Upload Mode Activated**\n\nSend files sequentially (e.g., Episode 1, Episode 2).\nUse /done to finish or /cancel to exit.",
-        reply_to_message_id=message.id
+        "**Batch Rename Mode Activated**\n\nPlease send the files one by one.\nUse /done when finished or /cancel to exit.",
+        reply_markup=ForceReply(True)
     )
 
-# Collect Files in Batch
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video) & batch_filter())
-async def collect_batch_files(client, message):
+async def collect_batch_file(client, message):
     chat_id = message.chat.id
-    file = getattr(message, message.media.value)
 
-    # Store file metadata
+    if not batch_states.get(chat_id):
+        return
+
+    file = getattr(message, message.media.value)
+    filename = file.file_name
+
+    if file.file_size > 2000 * 1024 * 1024:
+        await message.reply_text("Sorry, files larger than 2GB are not supported.")
+        return
+
+    # Store file information for batch processing
     batch_files[chat_id].append({
-        "file_id": file.file_id,
-        "file_name": file.file_name,
-        "file_size": file.file_size,
-        "thumb_id": file.thumbs[0].file_id if file.thumbs else None
+        'file': message,
+        'original_filename': filename
     })
 
-    await message.reply_text(f"✅ File added to batch ({len(batch_files[chat_id])} files).")
+    await message.reply_text(f"Added file {len(batch_files[chat_id])} to batch.")
 
-# Finish Batch and Rename Files
 @Client.on_message(filters.command("done") & filters.private)
 async def finish_batch(client, message):
     chat_id = message.chat.id
 
     if not batch_states.get(chat_id):
-        await message.reply_text("⚠️ You're not in batch upload mode. Use /batch to start.")
+        await message.reply_text("🚫 You're not in batch upload mode. Use /batch to start.")
         return
 
     if not batch_files[chat_id]:
-        await message.reply_text("⚠️ No files were added. Use /batch to start again.")
+        await message.reply_text("🚫 No files received in batch mode. Use /batch to restart.")
         return
 
-    # Ask for naming format
-    reply = await message.reply_text(
-        "✏️ Please provide the naming format (use `{numbering}` for sequence numbers):\n\nExample: `Episode {numbering}.mkv`",
+    # Ask for batch renaming format
+    await message.reply_text(
+        "Please provide the batch rename format. Use {numbering} for episode/file numbers.\n\n"
+        "Example: Episode {numbering} - {original_name}",
         reply_markup=ForceReply(True)
     )
 
-    # Wait for user to reply with format
-    @Client.on_message(filters.private & filters.reply & filters.create(lambda _, __, msg: msg.reply_to_message == reply))
-    async def batch_rename_handler(_, rename_message):
-        name_format = rename_message.text
+@Client.on_message(filters.private & filters.reply & filters.create(force_reply_filter))
+async def process_batch_rename(client, message):
+    chat_id = message.chat.id
+    batch_format = message.text
 
-        if "{numbering}" not in name_format:
-            await rename_message.reply_text("⚠️ Invalid format. Make sure to include `{numbering}`.")
-            return
-
-        # Ask for send options
-        buttons = [
-            [InlineKeyboardButton("📁 Send as Document", callback_data="batch_send_document")],
-            [InlineKeyboardButton("🎥 Send as Video", callback_data="batch_send_video")]
-        ]
-        await rename_message.reply_text(
-            "**How would you like to send the renamed files?**",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-
-        # Store batch info
-        batch_states[chat_id] = False
-        batch_files[chat_id] = {
-            "files": batch_files[chat_id],
-            "name_format": name_format
-        }
-
-# Handle Batch Send Options
-@Client.on_callback_query(filters.regex("batch_send_.*"))
-async def send_batch_files(client, query):
-    chat_id = query.message.chat.id
-    data = query.data
-    send_as_video = data == "batch_send_video"
-
-    batch_info = batch_files.get(chat_id, None)
-    if not batch_info:
-        await query.answer("No batch data found.", show_alert=True)
+    if not batch_states.get(chat_id):
         return
 
-    files = batch_info["files"]
-    name_format = batch_info["name_format"]
-    await query.message.edit("⏳ Processing batch files...")
+    # Validate format
+    if "{numbering}" not in batch_format:
+        await message.reply_text("🚫 Invalid format. Must include {numbering}.")
+        return
 
-    for idx, file_data in enumerate(files, start=1):
-        try:
-            # Download the file
-            file_path = await client.download_media(file_data["file_id"])
-            new_name = name_format.replace("{numbering}", str(idx))
-            new_path = os.path.join(os.path.dirname(file_path), new_name)
-            os.rename(file_path, new_path)
+    # Prepare upload options
+    button = [
+        [InlineKeyboardButton("📁 Document", callback_data="batch_upload_document")],
+        [InlineKeyboardButton("🎥 Video", callback_data="batch_upload_video")]
+    ]
 
-            # Download thumbnail if available
-            thumb_path = None
-            if file_data.get("thumb_id"):
-                thumb_path = await client.download_media(file_data["thumb_id"])
+    await message.reply_text(
+        "**Select Batch Upload Type**",
+        reply_markup=InlineKeyboardMarkup(button)
+    )
 
-            # Send file
-            if send_as_video:
-                await client.send_video(
-                    chat_id,
-                    video=new_path,
-                    thumb=thumb_path if thumb_path else None,
-                    caption=f"**{new_name}**"
-                )
-            else:
-                await client.send_document(
-                    chat_id,
-                    document=new_path,
-                    thumb=thumb_path if thumb_path else None,
-                    caption=f"**{new_name}**"
-                )
+    # Store batch information
+    batch_files[chat_id] = {
+        'files': batch_files[chat_id],
+        'format': batch_format
+    }
+    batch_states[chat_id] = False
 
-            # Cleanup
-            os.remove(new_path)
-            if thumb_path:
-                os.remove(thumb_path)
-
-        except Exception as e:
-            await query.message.reply_text(f"⚠️ Error processing file {idx}: {e}")
-
-    # Clear batch state
-    batch_files.pop(chat_id, None)
-    await query.message.reply_text("✅ Batch processing completed.")
-
-# Cancel Batch Mode
 @Client.on_message(filters.command("cancel") & filters.private)
 async def cancel_batch(client, message):
     chat_id = message.chat.id
 
     if not batch_states.get(chat_id):
-        await message.reply_text("⚠️ You're not in batch upload mode.")
+        await message.reply_text("🚫 You're not in batch upload mode. Use /batch to start.")
         return
 
     batch_states.pop(chat_id, None)
     batch_files.pop(chat_id, None)
-    await message.reply_text("❌ Batch mode cancelled.")
+    await message.reply_text("❌ Batch upload cancelled.")
 
+@Client.on_callback_query(filters.regex("batch_upload_"))
+async def send_batch_files(bot, query):
+    chat_id = query.message.chat.id
+    upload_type = query.data.split("_")[-1]
+    await query.message.delete()
+
+    # Get stored batch info
+    batch_info = batch_files.get(chat_id)
+    if not batch_info:
+        await query.answer("Batch information not found.", show_alert=True)
+        return
+
+    status_msg = await bot.send_message(chat_id, "⏳ Processing batch files...")
+
+    try:
+        for idx, file_data in enumerate(batch_info['files'], start=1):
+            # Generate new filename
+            original_file = file_data['original_filename']
+            new_name = batch_info['format'].format(
+                numbering=idx, 
+                original_name=original_file
+            )
+
+            # Ensure file extension
+            if not "." in new_name:
+                extn = original_file.rsplit('.', 1)[-1] if "." in original_file else "mkv"
+                new_name = f"{new_name}.{extn}"
+
+            # Download file
+            file_path = f"downloads/{chat_id}{time.time()}/{new_name}"
+            original_file_obj = file_data['file']
+            
+            # Download and process similar to the original rename logic
+            try:
+                path = await original_file_obj.download(file_name=file_path)
+                
+                # Extract metadata
+                duration = 0
+                try:
+                    metadata = extractMetadata(createParser(path))
+                    if metadata.has("duration"): 
+                        duration = metadata.get('duration').seconds
+                except:
+                    pass
+
+                # Handle thumbnail
+                ph_path = None
+                media = getattr(original_file_obj, original_file_obj.media.value)
+                db_thumb = await db.get_thumbnail(chat_id)
+
+                if media.thumbs or db_thumb:
+                    if db_thumb:
+                        ph_path = await bot.download_media(db_thumb)
+                    else:
+                        ph_path = await bot.download_media(media.thumbs[0].file_id)
+                    
+                    Image.open(ph_path).convert("RGB").save(ph_path)
+                    img = Image.open(ph_path)
+                    img.resize((320, 320))
+                    img.save(ph_path, "JPEG")
+
+                # Upload file based on type
+                if upload_type == "document":
+                    await bot.send_document(
+                        chat_id, 
+                        document=path, 
+                        thumb=ph_path, 
+                        caption=f"**{new_name}**",
+                        progress=progress_for_pyrogram,
+                        progress_args=("Upload Started...", status_msg, time.time())
+                    )
+                elif upload_type == "video":
+                    await bot.send_video(
+                        chat_id, 
+                        video=path, 
+                        thumb=ph_path, 
+                        caption=f"**{new_name}**",
+                        duration=duration,
+                        progress=progress_for_pyrogram,
+                        progress_args=("Upload Started...", status_msg, time.time())
+                    )
+
+                # Clean up files
+                try:
+                    os.remove(path)
+                    if ph_path:
+                        os.remove(ph_path)
+                except:
+                    pass
+
+            except Exception as e:
+                await bot.send_message(chat_id, f"Error processing file {idx}: {str(e)}")
+
+        await status_msg.delete()
+        batch_files.pop(chat_id, None)
+
+    except Exception as e:
+        await status_msg.edit(f"Batch upload error: {str(e)}")
