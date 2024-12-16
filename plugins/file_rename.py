@@ -38,6 +38,28 @@ async def start_batch(client, message):
         reply_markup=ForceReply(True)
     )
 
+@Client.on_message(filters.private & (filters.document | filters.audio | filters.video) & batch_filter())
+async def collect_batch_file(client, message):
+    chat_id = message.chat.id
+
+    if not batch_states.get(chat_id):
+        return
+
+    file = getattr(message, message.media.value)
+    filename = file.file_name
+
+    if file.file_size > 2000 * 1024 * 1024:
+        await message.reply_text("Sorry, files larger than 2GB are not supported.")
+        return
+
+    # Store file information for batch processing
+    batch_files[chat_id].append({
+        'file': message,
+        'original_filename': filename
+    })
+
+    await message.reply_text(f"Added file {len(batch_files[chat_id])} to batch.")
+
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
 async def rename_handler(client, message):
     file = getattr(message, message.media.value)
