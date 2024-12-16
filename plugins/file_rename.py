@@ -36,14 +36,15 @@ async def rename_handler(client, message):
         )
     except:
         pass
-
+'''
 
 async def force_reply_filter(_, client, message):
     if (message.reply_to_message.reply_markup) and isinstance(message.reply_to_message.reply_markup, ForceReply):
         return True 
     else:
         return False 
- 
+
+'''
 @Client.on_message(filters.private & filters.reply & filters.create(force_reply_filter))
 async def rename_selection(client, message):
     reply_message = message.reply_to_message
