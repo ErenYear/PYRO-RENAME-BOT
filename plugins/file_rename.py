@@ -13,41 +13,38 @@ from asyncio import sleep
 from PIL import Image
 import os, time
 
-# Shared storage for user states
-user_states = {}
+batch_states = {}
+batch_files = {}
 
-# Modes
-NORMAL_MODE = "normal"
-BATCH_MODE = "batch"
+# Custom filter to prevent collision
+def batch_filter():
+    async def func(_, __, message):
+        return batch_states.get(message.chat.id, False)
+    return filters.create(func)
 
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
-async def file_handler(client, message):
-    chat_id = message.chat.id
-    current_mode = user_states.get(chat_id, NORMAL_MODE)
-
-    if current_mode == BATCH_MODE:
-        await collect_batch_file(client, message)
-    else:
-        await rename_handler(client, message)
-
 async def rename_handler(client, message):
     file = getattr(message, message.media.value)
-    filename = file.file_name
-
+    filename = file.file_name  
     if file.file_size > 2000 * 1024 * 1024:
-        return await message.reply_text("Sorry, files larger than 2GB are not supported.")
+        return await message.reply_text("Sᴏʀʀy Bʀᴏ Tʜɪꜱ Bᴏᴛ Iꜱ Dᴏᴇꜱɴ'ᴛ Sᴜᴩᴩᴏʀᴛ Uᴩʟᴏᴀᴅɪɴɢ Fɪʟᴇꜱ Bɪɢɢᴇʀ Tʜᴀɴ 2Gʙ")
 
     try:
         await message.reply_text(
-            text=f"**Enter new filename:**\n\n**Old filename:** `{filename}`",
-            reply_to_message_id=message.id,
-            reply_markup=ForceReply(True)
-        )
+            text=f"**__Pʟᴇᴀꜱᴇ Eɴᴛᴇʀ Nᴇᴡ Fɪʟᴇɴᴀᴍᴇ...__**\n\n**Oʟᴅ Fɪʟᴇ Nᴀᴍᴇ** :- `{filename}`",
+    	    reply_to_message_id=message.id,  
+    	    reply_markup=ForceReply(True)
+        )       
     except FloodWait as e:
         await sleep(e.value)
-    except Exception as e:
-        print(f"Error: {e}")
-    
+        await message.reply_text(
+            text=f"**__Pʟᴇᴀꜱᴇ Eɴᴛᴇʀ Nᴇᴡ Fɪʟᴇɴᴀᴍᴇ...__**\n\n**Oʟᴅ Fɪʟᴇ Nᴀᴍᴇ** :- `{filename}`",
+    	    reply_to_message_id=message.id,  
+    	    reply_markup=ForceReply(True)
+        )
+    except:
+        pass
+
 async def force_reply_filter(_, client, message):
     if (message.reply_to_message.reply_markup) and isinstance(message.reply_to_message.reply_markup, ForceReply):
         return True 
@@ -196,17 +193,19 @@ def batch_filter():
 async def start_batch(client, message):
     chat_id = message.chat.id
 
-    if user_states.get(chat_id) == BATCH_MODE:
-        await message.reply_text("🚫 You're already in batch mode. Use /done to finish or /cancel to exit.")
+    if batch_states.get(chat_id, False):
+        await message.reply_text("🚫 You're already in batch upload mode. Use /done to finish or /cancel to exit.")
         return
 
-    user_states[chat_id] = BATCH_MODE
+    batch_states[chat_id] = True
     batch_files[chat_id] = []
 
     await message.reply_text(
-        "**Batch Rename Mode Activated**\n\nSend files one by one. Use /done to finish or /cancel to exit."
+        "**Batch Rename Mode Activated**\n\nPlease send the files one by one.\nUse /done when finished or /cancel to exit.",
+        reply_markup=ForceReply(True)
     )
 
+@Client.on_message(filters.private & (filters.document | filters.audio | filters.video) & batch_filter())
 async def collect_batch_file(client, message):
     chat_id = message.chat.id
 
@@ -232,21 +231,21 @@ async def collect_batch_file(client, message):
 async def finish_batch(client, message):
     chat_id = message.chat.id
 
-    if user_states.get(chat_id) != BATCH_MODE:
-        await message.reply_text("🚫 You're not in batch mode. Use /batch to start.")
+    if not batch_states.get(chat_id):
+        await message.reply_text("🚫 You're not in batch upload mode. Use /batch to start.")
         return
 
     if not batch_files[chat_id]:
-        await message.reply_text("🚫 No files received in batch mode.")
+        await message.reply_text("🚫 No files received in batch mode. Use /batch to restart.")
         return
 
-    # Proceed to batch renaming process
+    # Ask for batch renaming format
     await message.reply_text(
-        "Please provide the batch rename format. Use {numbering} for numbering.\n\nExample: `Episode {numbering} - {original_name}`",
+        "Please provide the batch rename format. Use {numbering} for episode/file numbers.\n\n"
+        "Example: Episode {numbering} - {original_name}",
         reply_markup=ForceReply(True)
     )
-    user_states[chat_id] = "batch_rename"
-    
+
 @Client.on_message(filters.private & filters.reply & filters.create(force_reply_filter))
 async def process_batch_rename(client, message):
     chat_id = message.chat.id
@@ -282,14 +281,14 @@ async def process_batch_rename(client, message):
 async def cancel_batch(client, message):
     chat_id = message.chat.id
 
-    if user_states.get(chat_id) != BATCH_MODE:
-        await message.reply_text("🚫 You're not in batch mode.")
+    if not batch_states.get(chat_id):
+        await message.reply_text("🚫 You're not in batch upload mode. Use /batch to start.")
         return
 
-    user_states.pop(chat_id, None)
+    batch_states.pop(chat_id, None)
     batch_files.pop(chat_id, None)
-    await message.reply_text("❌ Batch mode cancelled.")
-    
+    await message.reply_text("❌ Batch upload cancelled.")
+
 @Client.on_callback_query(filters.regex("batch_upload_"))
 async def send_batch_files(bot, query):
     chat_id = query.message.chat.id
