@@ -13,14 +13,30 @@ from asyncio import sleep
 from PIL import Image
 import os, time
 
-batch_states = {}
 batch_files = {}
+batch_states = {}
 
-# Custom filter to prevent collision
+# Custom filter to handle batch upload state
 def batch_filter():
     async def func(_, __, message):
         return batch_states.get(message.chat.id, False)
     return filters.create(func)
+
+@Client.on_message(filters.command("batch") & filters.private)
+async def start_batch(client, message):
+    chat_id = message.chat.id
+
+    if batch_states.get(chat_id, False):
+        await message.reply_text("🚫 You're already in batch upload mode. Use /done to finish or /cancel to exit.")
+        return
+
+    batch_states[chat_id] = True
+    batch_files[chat_id] = []
+
+    await message.reply_text(
+        "**Batch Rename Mode Activated**\n\nPlease send the files one by one.\nUse /done when finished or /cancel to exit.",
+        reply_markup=ForceReply(True)
+    )
 
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
 async def rename_handler(client, message):
@@ -178,32 +194,6 @@ from helper.database import db
 from asyncio import sleep
 from PIL import Image
 import os, time
-
-# Shared storage for batch processing
-batch_files = {}
-batch_states = {}
-
-# Custom filter to handle batch upload state
-def batch_filter():
-    async def func(_, __, message):
-        return batch_states.get(message.chat.id, False)
-    return filters.create(func)
-
-@Client.on_message(filters.command("batch") & filters.private)
-async def start_batch(client, message):
-    chat_id = message.chat.id
-
-    if batch_states.get(chat_id, False):
-        await message.reply_text("🚫 You're already in batch upload mode. Use /done to finish or /cancel to exit.")
-        return
-
-    batch_states[chat_id] = True
-    batch_files[chat_id] = []
-
-    await message.reply_text(
-        "**Batch Rename Mode Activated**\n\nPlease send the files one by one.\nUse /done when finished or /cancel to exit.",
-        reply_markup=ForceReply(True)
-    )
 
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video) & batch_filter())
 async def collect_batch_file(client, message):
