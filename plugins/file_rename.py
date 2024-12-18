@@ -258,7 +258,7 @@ async def finish_batch(client, message):
         reply_markup=ForceReply(True)
     )
 
-@Client.on_message(filters.private & filters.reply & filters.create(force_reply_filter))
+@Client.on_message(filters.private & filters.reply, group=1)
 async def process_batch_rename(client, message):
     chat_id = message.chat.id
     batch_format = message.text
