@@ -90,13 +90,13 @@ async def set_format(client, message):
         await message.reply_text("🚫 Invalid format. Must include `{numbering}`.")
         return
 
-    # Get starting number
+    # Extract starting number
     try:
-        start_number = int(message.text.split("-")[-1].strip())
+        start_number = int(message.text.split("{numbering-")[-1].rstrip("}"))
     except ValueError:
         start_number = 1
 
-    state['format'] = message.text.split("-")[0].strip()
+    state['format'] = message.text.split("{numbering-")[0] + "{numbering}"
     state['start_number'] = start_number
 
     await message.reply_text("✅ Format set! Send your files now.")
@@ -175,4 +175,4 @@ async def cancel_batch(client, message):
 
     batch_states.pop(chat_id, None)
     await message.reply_text("❌ Batch upload canceled.")
-
+    
