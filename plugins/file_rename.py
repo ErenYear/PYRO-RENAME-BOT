@@ -86,7 +86,7 @@ async def set_format(client, message):
         return
 
     # Validate format
-    if "{numbering}" not in message.text:
+    if "{numbering" not in message.text:
         await message.reply_text("🚫 Invalid format. Must include `{numbering}`.")
         return
 
