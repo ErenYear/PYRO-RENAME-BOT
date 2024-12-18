@@ -1,20 +1,16 @@
 from pyrogram import Client, filters
-from pyrogram.enums import MessageMediaType
 from pyrogram.errors import FloodWait
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
-
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
-
-from helper.utils import progress_for_pyrogram, convert, humanbytes
+from helper.utils import progress_for_pyrogram
 from helper.database import db
-
-from asyncio import sleep
 from PIL import Image
 import os, time
 
 batch_files = {}
 batch_states = {}
+upload_type = {}
 
 # Custom filter to handle batch upload state
 def batch_filter():
@@ -27,14 +23,13 @@ async def start_batch(client, message):
     chat_id = message.chat.id
 
     if batch_states.get(chat_id, False):
-        await message.reply_text("🚫 You're already in batch upload mode. Use /done to finish or /cancel to exit.")
+        await message.reply_text("🚫 You're already in batch upload mode. Use /cancel to exit.")
         return
 
     batch_states[chat_id] = True
     batch_files[chat_id] = []
-
     await message.reply_text(
-        "**Batch Rename Mode Activated**\n\nPlease send the files one by one.\nUse /done when finished or /cancel to exit.",
+        "**Batch Rename Mode Activated**\n\nSend files one by one.\nUse /cancel to exit.",
         reply_markup=ForceReply(True)
     )
 
@@ -53,7 +48,7 @@ async def collect_and_process_file(client, message):
         return
 
     batch_files[chat_id].append({'file': message, 'original_filename': filename})
-    await message.reply_text("File added to batch. Please provide the rename format. Use {numbering} for numbering.")
+    await message.reply_text("File added to batch. Please provide the rename format with `-n` for numbering.")
 
 @Client.on_message(filters.private & filters.reply, group=1)
 async def rename_and_send_file(client, message):
@@ -77,6 +72,31 @@ async def rename_and_send_file(client, message):
         except ValueError:
             await message.reply_text("🚫 Invalid numbering start value.")
             return
+
+    button = [
+        [InlineKeyboardButton("📁 Document", callback_data="upload_document")],
+        [InlineKeyboardButton("🎥 Video", callback_data="upload_video")]
+    ]
+    await message.reply_text(
+        "Select upload type:",
+        reply_markup=InlineKeyboardMarkup(button)
+    )
+
+    upload_type[chat_id] = {'format': format_text, 'start_number': start_number}
+
+@Client.on_callback_query(filters.regex("upload_"))
+async def process_file_upload(client, query):
+    chat_id = query.message.chat.id
+    file_type = query.data.split("_")[1]
+
+    if chat_id not in upload_type:
+        await query.answer("No rename format found.", show_alert=True)
+        return
+
+    await query.message.delete()
+    format_text = upload_type[chat_id]['format']
+    start_number = upload_type[chat_id]['start_number']
+    files = batch_files[chat_id]
 
     for idx, file_data in enumerate(files, start=start_number):
         original_file = file_data["original_filename"]
@@ -115,23 +135,35 @@ async def rename_and_send_file(client, message):
                 img.resize((320, 320))
                 img.save(ph_path, "JPEG")
 
-            await client.send_document(
-                chat_id,
-                document=path,
-                thumb=ph_path,
-                caption=f"**{new_name}**",
-                progress=progress_for_pyrogram,
-                progress_args=("Uploading...", None, time.time())
-            )
+            if file_type == "document":
+                await client.send_document(
+                    chat_id,
+                    document=path,
+                    thumb=ph_path,
+                    caption=f"**{new_name}**",
+                    progress=progress_for_pyrogram,
+                    progress_args=("Uploading...", None, time.time())
+                )
+            elif file_type == "video":
+                await client.send_video(
+                    chat_id,
+                    video=path,
+                    thumb=ph_path,
+                    caption=f"**{new_name}**",
+                    duration=duration,
+                    progress=progress_for_pyrogram,
+                    progress_args=("Uploading...", None, time.time())
+                )
 
             os.remove(path)
             if ph_path:
                 os.remove(ph_path)
         except Exception as e:
-            await message.reply_text(f"Error processing file: {str(e)}")
+            await client.send_message(chat_id, f"Error processing file: {str(e)}")
 
-    batch_files.pop(chat_id, None)
-    await message.reply_text("Batch processing completed!")
+    del batch_files[chat_id]
+    del upload_type[chat_id]
+    await client.send_message(chat_id, "All files have been renamed and uploaded!")
 
 @Client.on_message(filters.command("cancel") & filters.private)
 async def cancel_batch(client, message):
@@ -143,5 +175,6 @@ async def cancel_batch(client, message):
 
     batch_states.pop(chat_id, None)
     batch_files.pop(chat_id, None)
+    upload_type.pop(chat_id, None)
     await message.reply_text("❌ Batch upload cancelled.")
-    
+            
