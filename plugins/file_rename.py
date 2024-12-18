@@ -60,7 +60,7 @@ async def collect_batch_file(client, message):
 
     await message.reply_text(f"Added file {len(batch_files[chat_id])} to batch.")
 
-@Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
+# @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
 async def rename_handler(client, message):
     file = getattr(message, message.media.value)
     filename = file.file_name  
@@ -89,7 +89,7 @@ async def force_reply_filter(_, client, message):
     else:
         return False 
 
-@Client.on_message(filters.private & filters.reply, group=-1)
+# @Client.on_message(filters.private & filters.reply, group=-1)
 async def rename_selection(client, message):
     reply_message = message.reply_to_message
 
@@ -118,7 +118,7 @@ async def rename_selection(client, message):
     )
 
 
-@Client.on_callback_query(filters.regex("upload"))
+# @Client.on_callback_query(filters.regex("upload"))
 async def rename_callback(bot, query): 
     user_id = query.from_user.id
     file_name = query.message.text.split(":-")[1]
