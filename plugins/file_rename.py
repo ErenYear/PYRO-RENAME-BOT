@@ -89,7 +89,7 @@ async def force_reply_filter(_, client, message):
     else:
         return False 
 
-@Client.on_message(filters.private & filters.reply & filters.create(force_reply_filter))
+@Client.on_message(filters.private & filters.reply, group=-1)
 async def rename_selection(client, message):
     reply_message = message.reply_to_message
 
