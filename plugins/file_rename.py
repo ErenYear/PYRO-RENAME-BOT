@@ -11,6 +11,7 @@ import os, time
 batch_files = {}
 batch_states = {}
 upload_type = {}
+sts = {}
 
 # Custom filter to handle batch upload state
 def batch_filter():
@@ -98,6 +99,8 @@ async def process_file_upload(client, query):
     start_number = upload_type[chat_id]['start_number']
     files = batch_files[chat_id]
 
+    sts_msg = await client.send_message(chat_id, "Starting file uploads...")
+
     for idx, file_data in enumerate(files, start=start_number):
         original_file = file_data["original_filename"]
         new_name = format_text.format(numbering=idx, original_name=original_file)
@@ -110,7 +113,12 @@ async def process_file_upload(client, query):
         original_file_obj = file_data["file"]
 
         try:
-            path = await original_file_obj.download(file_name=file_path)
+            sts[chat_id] = await sts_msg.edit_text(f"Downloading: **{original_file}**")
+            path = await original_file_obj.download(
+                file_name=file_path,
+                progress=progress_for_pyrogram,
+                progress_args=(sts[chat_id], "Downloading...", time.time())
+            )
 
             duration = 0
             try:
@@ -135,6 +143,8 @@ async def process_file_upload(client, query):
                 img.resize((320, 320))
                 img.save(ph_path, "JPEG")
 
+            sts[chat_id] = await sts_msg.edit_text(f"Uploading: **{new_name}**")
+
             if file_type == "document":
                 await client.send_document(
                     chat_id,
@@ -142,7 +152,7 @@ async def process_file_upload(client, query):
                     thumb=ph_path,
                     caption=f"**{new_name}**",
                     progress=progress_for_pyrogram,
-                    progress_args=("Uᴩʟᴏᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time())
+                    progress_args=(sts[chat_id], "Uploading...", time.time())
                 )
             elif file_type == "video":
                 await client.send_video(
@@ -152,7 +162,7 @@ async def process_file_upload(client, query):
                     caption=f"**{new_name}**",
                     duration=duration,
                     progress=progress_for_pyrogram,
-                    progress_args=("Uᴩʟᴏᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time())
+                    progress_args=(sts[chat_id], "Uploading...", time.time())
                 )
 
             os.remove(path)
@@ -163,6 +173,7 @@ async def process_file_upload(client, query):
 
     del batch_files[chat_id]
     del upload_type[chat_id]
+    sts.pop(chat_id, None)
     await client.send_message(chat_id, "All files have been renamed and uploaded!")
 
 @Client.on_message(filters.command("cancel") & filters.private)
@@ -176,5 +187,6 @@ async def cancel_batch(client, message):
     batch_states.pop(chat_id, None)
     batch_files.pop(chat_id, None)
     upload_type.pop(chat_id, None)
+    sts.pop(chat_id, None)
     await message.reply_text("❌ Batch upload cancelled.")
-            
+
