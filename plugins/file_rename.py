@@ -6,18 +6,25 @@ from hachoir.parser import createParser
 from helper.utils import progress_for_pyrogram
 from helper.database import db
 from PIL import Image
-import os, time
+import os
+import time
+import asyncio
 
 batch_files = {}
 batch_states = {}
 upload_type = {}
-sts = {}
+current_status = {}
 
 # Custom filter to handle batch upload state
 def batch_filter():
     async def func(_, __, message):
         return batch_states.get(message.chat.id, False)
     return filters.create(func)
+
+async def update_sts(chat_id, msg, sts):
+    if msg:
+        await msg.edit_text(sts)
+    current_status[chat_id] = sts
 
 @Client.on_message(filters.command("batch") & filters.private)
 async def start_batch(client, message):
@@ -98,8 +105,7 @@ async def process_file_upload(client, query):
     format_text = upload_type[chat_id]['format']
     start_number = upload_type[chat_id]['start_number']
     files = batch_files[chat_id]
-
-    sts_msg = await client.send_message(chat_id, "Starting file uploads...")
+    sts_message = await query.message.reply_text("Starting batch process...")
 
     for idx, file_data in enumerate(files, start=start_number):
         original_file = file_data["original_filename"]
@@ -113,11 +119,11 @@ async def process_file_upload(client, query):
         original_file_obj = file_data["file"]
 
         try:
-            sts[chat_id] = await sts_msg.edit_text(f"Downloading: **{original_file}**")
+            await update_sts(chat_id, sts_message, f"📥 Downloading `{original_file}`...")
             path = await original_file_obj.download(
                 file_name=file_path,
                 progress=progress_for_pyrogram,
-                progress_args=(sts[chat_id], "Downloading...", time.time())
+                progress_args=(sts_message, f"Downloading `{original_file}`...", time.time())
             )
 
             duration = 0
@@ -143,8 +149,7 @@ async def process_file_upload(client, query):
                 img.resize((320, 320))
                 img.save(ph_path, "JPEG")
 
-            sts[chat_id] = await sts_msg.edit_text(f"Uploading: **{new_name}**")
-
+            await update_sts(chat_id, sts_message, f"📤 Uploading `{new_name}`...")
             if file_type == "document":
                 await client.send_document(
                     chat_id,
@@ -152,7 +157,7 @@ async def process_file_upload(client, query):
                     thumb=ph_path,
                     caption=f"**{new_name}**",
                     progress=progress_for_pyrogram,
-                    progress_args=(sts[chat_id], "Uploading...", time.time())
+                    progress_args=(sts_message, f"Uploading `{new_name}`...", time.time())
                 )
             elif file_type == "video":
                 await client.send_video(
@@ -162,7 +167,7 @@ async def process_file_upload(client, query):
                     caption=f"**{new_name}**",
                     duration=duration,
                     progress=progress_for_pyrogram,
-                    progress_args=(sts[chat_id], "Uploading...", time.time())
+                    progress_args=(sts_message, f"Uploading `{new_name}`...", time.time())
                 )
 
             os.remove(path)
@@ -173,8 +178,7 @@ async def process_file_upload(client, query):
 
     del batch_files[chat_id]
     del upload_type[chat_id]
-    sts.pop(chat_id, None)
-    await client.send_message(chat_id, "All files have been renamed and uploaded!")
+    await update_sts(chat_id, sts_message, "✅ All files have been renamed and uploaded!")
 
 @Client.on_message(filters.command("cancel") & filters.private)
 async def cancel_batch(client, message):
@@ -187,6 +191,5 @@ async def cancel_batch(client, message):
     batch_states.pop(chat_id, None)
     batch_files.pop(chat_id, None)
     upload_type.pop(chat_id, None)
-    sts.pop(chat_id, None)
     await message.reply_text("❌ Batch upload cancelled.")
 
