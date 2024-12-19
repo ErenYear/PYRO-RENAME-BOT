@@ -142,7 +142,7 @@ async def process_file_upload(client, query):
                     thumb=ph_path,
                     caption=f"**{new_name}**",
                     progress=progress_for_pyrogram,
-                    progress_args=(query.message, time.time())
+                    progress_args=("Uᴩʟᴏᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time())
                 )
             elif file_type == "video":
                 await client.send_video(
@@ -152,7 +152,7 @@ async def process_file_upload(client, query):
                     caption=f"**{new_name}**",
                     duration=duration,
                     progress=progress_for_pyrogram,
-                    progress_args=(query.message, time.time())
+                    progress_args=("Uᴩʟᴏᴅ Sᴛᴀʀᴛᴇᴅ....", sts, time.time())
                 )
 
             os.remove(path)
